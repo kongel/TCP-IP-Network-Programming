@@ -47,6 +47,7 @@ protocol 计算机通信协议信息
 | PF_LOCAL  | 本地通信 Unix 协议族 |
 | PF_PACKET | 底层套接字的协议族   |
 | PF_IPX    | IPX Novel 协议族     |
+PF_INET与AF_INET是等效的
 
 套接字类型 type参数
 决定了协议族并不能同时决定数据的传输方式
@@ -63,7 +64,13 @@ protocol 计算机通信协议信息
 - 传输数据可能丢失或者销毁
 - 传输数据有边界
 - 限制每次传输大小
+没有连接
+发送端发两次,接收端就要接受两次
 
+第三个参数 type
+指定domain协议族,type套接字传输方式,第三个参数,protocol指定具体的协议信息
+int tcp_socket=socket(PF_INET,SOCK_STREAM,IPPROTO_TCP);
+满足PF_INET IPv4和tcp方式的就只有IPPROTO_TCP,传0或IPPROTO_TCP都可以
 
 bind函数为套接字分配ip地址和端口号
 ```
@@ -71,6 +78,53 @@ bind函数为套接字分配ip地址和端口号
 int bind(int sockfd,struct sockaddr *myaddr,socklen_t addrlen);
 成功返回0,失败返回-1
 ```
+bind函数在实际的函数调用中
+```
+struct sockaddr_in serv_addr;
+bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr))
+```
+用到的各种结构体实际的定义
+```
+struct sockaddr_in
+{
+    sa_family_t sin_family;  //地址族（Address Family）
+    uint16_t sin_port;       //16 位 TCP/UDP 端口号,用网络字节序保存
+    struct in_addr sin_addr; //32位 IP 地址,用网络字节序保存,就是一个uint32_t
+    char sin_zero[8];        //不使用
+};
+
+struct in_addr
+{
+    in_addr_t s_addr; //32位IPV4地址
+}
+```
+关于以上两个结构体的一些数据类型。
+
+| 数据类型名称 |             数据类型说明             | 声明的头文件 |
+| :----------: | :----------------------------------: | :----------: |
+|   int 8_t    |           signed 8-bit int           | sys/types.h  |
+|   uint8_t    |  unsigned 8-bit int (unsigned char)  | sys/types.h  |
+|   int16_t    |          signed 16-bit int           | sys/types.h  |
+|   uint16_t   | unsigned 16-bit int (unsigned short) | sys/types.h  |
+|   int32_t    |          signed 32-bit int           | sys/types.h  |
+|   uint32_t   | unsigned 32-bit int (unsigned long)  | sys/types.h  |
+| sa_family_t  |       地址族（address family）       | sys/socket.h |
+|  socklen_t   |       长度（length of struct）       | sys/socket.h |
+|  in_addr_t   |       IP地址，声明为 uint_32_t       | netinet/in.h |
+|  in_port_t   |       端口号，声明为 uint_16_t       | netinet/in.h |
+
+bind函数用到的第二个参数,先声明为sockaddr_in,填充完数据后再强制类型转化为sockaddr类型
+sockaddr_in内sa_family_t sin_family;可以取得值为
+
+> 地址族
+
+| 地址族（Address Family） | 含义                               |
+| ------------------------ | ---------------------------------- |
+| AF_INET                  | IPV4用的地址族                     |
+| AF_INET6                 | IPV6用的地址族                     |
+| AF_LOCAL                 | 本地通信中采用的 Unix 协议的地址族 |
+
+
 
 listen函数设置监听状态
 ```
@@ -266,12 +320,84 @@ void error_handling(char *message)
 }
 ```
 
+atoi函数
+把字符串数字转化为int数字
+```
+#include <stdlib.h>
+int atoi(const char *str);
+
+```
+
 ## 课后习题
 Linux 中，对套接字数据进行 I/O 时可以直接使用文件 I/O 相关函数；而在 Windows 中则不可以。原因为何？
 
 答：Linux把套接字也看作是文件，所以可以用文件I/O相关函数；而Windows要区分套接字和文件，所以设置了特殊的函数
 
 # 第二章 套接字类型与协议设置
+讲了数据边界和几个函数参数
+都在第一章讲了
+
+## 习题
+
+&lt; 就是<
+&gt; 就是 >
+
+tcp传输和udp传输的区别
+
+# 第三章 地址族与数据序列
+
+端口号不能重复
+但是tcp套接字和udp套接字不会共用端口号,允许重复
+
+网络字节序是大端序
+intel和amd的cpu都采用小端序
+数据字节序转换是默认的
+## 字节序转换函数
+```
+unsigned short htons(unsigned short);
+unsigned short ntohs(unsigned short);
+unsigned long htonl(unsigned long);
+unsigned long ntohl(unsigned long);
+```
+通过函数名称掌握其功能，只需要了解：
+
+htons 的 h 代表主机（host）字节序。
+htons 的 n 代表网络（network）字节序。
+s 代表 short
+l 代表 long
+
+把字符串ip信息转化为网络字节序整数
+```
+#include <arpa/inet.h>
+in_addr_t inet_addr(const char *string);
+成功返回大端32位整数,失败返回INADDR_NONE
+```
+
+和上面的完全一样,就是把字符串ip化为32位整数
+```
+#include <arpa/inet.h>
+int inet_aton(const char *string, struct in_addr *addr);
+/*
+成功时返回 1 ，失败时返回 0
+string: 含有需要转换的IP地址信息的字符串地址值
+addr: 将保存转换结果的 in_addr 结构体变量的地址值
+*/
+```
+
+把网络字节序的ip转化为字符串ip
+```
+#include <arpa/inet.h>
+char *inet_ntoa(struct in_addr adr);
+```
+需要注意的是这个函数返回一个指针
+
+
+## 习题
+ipv4是4个字节
+ipv6是16字节
+
+ip地址区分主机
+port端口号区分程序
 
 
 
