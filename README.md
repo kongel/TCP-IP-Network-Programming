@@ -391,6 +391,22 @@ char *inet_ntoa(struct in_addr adr);
 ```
 需要注意的是这个函数返回一个指针
 
+## 网络地址初始化
+```
+struct sockaddr_in addr;
+char *serv_ip = "211.217,168.13";          //声明IP地址族
+char *serv_port = "9190";                  //声明端口号字符串
+memset(&addr, 0, sizeof(addr));            //结构体变量 addr 的所有成员初始化为0
+addr.sin_family = AF_INET;                 //制定地址族
+addr.sin_addr.s_addr = inet_addr(serv_ip); //基于字符串的IP地址初始化
+addr.sin_port = htons(atoi(serv_port));    //基于字符串的IP地址端口号初始化
+```
+atoi把字符串转化为数字
+这里可以用INADDR_ANY分配服务器的IP地址,可以自动获取运行于服务器端的计算机ip地址
+如果计算机有多个ip,只要端口号一致,就可以从不同ip地址接收数据
+
+
+## 客户端地址初始化
 
 ## 习题
 ipv4是4个字节
