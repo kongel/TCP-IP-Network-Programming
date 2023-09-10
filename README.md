@@ -132,6 +132,7 @@ listen函数设置监听状态
 int listen(int sockfd,int backlog);
 成功返回0,失败返回-1
 ```
+backlog表示请求等待队列的长度,最多使几个连接请求进入队列
 
 accept函数接受连接
 ```
@@ -299,7 +300,7 @@ int main(int argc, char *argv[])
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
     serv_addr.sin_port = htons(atoi(argv[2]));
-    //调用 connect 函数向服务器发送连接请求
+    //调用 connect 函数向服务器发送连接请求,没有调用bind,client的ip在调用connect自动分配
     if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
         error_handling("connect() error!");
 
@@ -415,10 +416,220 @@ ipv6是16字节
 ip地址区分主机
 port端口号区分程序
 
+# 第四章 基于tcp的服务端,客户端
+这里提供迭代回声客户端
+1.服务器同时只和一个客户端相连,并提供回声服务
+2.服务器,依次对于5个客户端提供服务并退出
+3.客户端接受用户输入的字符发送到服务器端
+4.服务器将接受到的数据发回客户端
+5.服务器端与客户端回声一直持续到客户端输入Q为止
+回声服务端
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define BUF_SIZE 1024
+void error_handing(char* message){
+    fputs(message,stderr);
+    fputc('\n',stderr);
+    exit(1);
+}
+
+int main(int argc,char* argv[]){
+    int server_sock,cli_sock;
+    char message[BUF_SIZE];
+    int str_len,i;
+    struct sockaddr_in serv_addr,cli_addr;
+    socklen_t cli_addr_size;
+
+    if(argc!=2){
+        printf("Usage: %s<port>\n",argv[0]);
+        exit(1);
+    }
+    server_sock=socket(PF_INET,SOCK_STREAM,0);
+    if(server_sock==-1)error_handing("socket() error");
+    memset(&serv_addr,0,sizeof(serv_addr));
+    serv_addr.sin_family=AF_INET;
+    serv_addr.sin_addr.s_addr=htonl(INADDR_ANY);
+    serv_addr.sin_port=htons(atoi(argv[1]));
+
+    if(bind(server_sock,(struct sockaddr*)&serv_addr,sizeof(serv_addr))==-1)error_handing("bind() error");
+    if(listen(server_sock,5)==-1)error_handing("listen() error");
+    cli_addr_size=sizeof(cli_addr);
+
+    for(i=0;i<5;i++){
+        cli_sock=accept(server_sock,(struct sockaddr*)&cli_addr,&cli_addr_size);
+        if(cli_sock==1)error_handing("accept() error");
+        else printf("Connect to client,num is %d \n",i+1);
+
+        while((str_len=read(cli_sock,message,BUF_SIZE))!=0){
+            printf("server get message is :%s\n",message);
+            write(cli_sock,message,str_len);
+        }
+        close(cli_sock);
+    }
+    close(server_sock);
+    return 0;
+}
+
+```
+回声客户端
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define BUF_SIZE 1024
+void error_handing(char* message){
+    fputs(message,stderr);
+    fputc('\n',stderr);
+    exit(1);
+}
+
+int main(int argc,char* argv[]){
+    int sock;
+    int str_len;
+    struct sockaddr_in ser_addr;
+    char message[BUF_SIZE];
+
+    if(argc!=3){
+        printf("Usage: %s <IP> <port>\n",argv[0]);
+        exit(1);
+    }
+    sock=socket(AF_INET,SOCK_STREAM,0);
+    if(sock==-1)error_handing("socket() error");
+    memset(&ser_addr,0,sizeof(ser_addr));
+    ser_addr.sin_family=AF_INET;
+    ser_addr.sin_addr.s_addr=inet_addr(argv[1]);
+    ser_addr.sin_port=htons(atoi(argv[2]));
+
+    if(connect(sock,(struct sockaddr*)&ser_addr,sizeof(ser_addr))==-1){
+        error_handing("connect() error");
+    }else{puts("Connected \n");}
+
+    while(1){
+        fputs("input message (Q to quit):",stdout);
+        fgets(message,BUF_SIZE,stdin);
 
 
+        if(!strcmp(message,"q\n") || !strcmp(message,"Q\n")){
+            break;
+        }
+        write(sock,message,strlen(message));
+        //str_len=read(sock,message,BUF_SIZE-1);
+        message[str_len]=0;//最后一个字符为'\0'
+        printf("stelen : %d message from server is: %s\n",str_len,message);
+
+    }
+    close(sock);
+    return 0;
+}
+
+```
+
+## 4.5 习题
+tcp/ip协议4层
+应用层
+传输层
+网络称
+数据链路层
+
+# 第五章 基于tcp的服务器客户端
+上一节中回声客户端的问题是粘包情况
+
+不一定在每次read/write函数调用的时候就发生io操作
+多次write的结果可能一次传递到服务端
+一次write的结果也可能多次传到服务端
+客户端可能需要多次read才能读全
+
+只要多等一会,tcp会完整传输过来
+但是理想的回声客户端不需要等待,需要保证接收
 
 
+没有考虑到粘包拆包情况
+tcp没有数据边界,是一个连续的字节流
+如果缓冲区很大,可能多个写入数据被一起发送
+如果缓冲区很小,一个消息被分成多个部分发送
+
+可以通过定义应用层数据协议,规定数据边界或者字节数来解决
+这里给出回声客户端的正确实现
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define BUF_SIZE 1024
+void error_handling(char *message);
+
+int main(int argc, char *argv[])
+{
+    int sock;
+    char message[BUF_SIZE];
+    int str_len, recv_len, recv_cnt;
+    struct sockaddr_in serv_adr;
+
+    if (argc != 3)
+    {
+        printf("Usage : %s <IP> <port>\n", argv[0]);
+        exit(1);
+    }
+
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1)
+        error_handling("socket() error");
+
+    memset(&serv_adr, 0, sizeof(serv_adr));
+    serv_adr.sin_family = AF_INET;
+    serv_adr.sin_addr.s_addr = inet_addr(argv[1]);
+    serv_adr.sin_port = htons(atoi(argv[2]));
+
+    if (connect(sock, (struct sockaddr *)&serv_adr, sizeof(serv_adr)) == -1)
+        error_handling("connect() error!");
+    else
+        puts("Connected...........");
+
+    while (1)
+    {
+        fputs("Input message(Q to quit): ", stdout);
+        fgets(message, BUF_SIZE, stdin);
+
+        if (!strcmp(message, "q\n") || !strcmp(message, "Q\n"))
+            break;
+        str_len = write(sock, message, strlen(message));
+
+        recv_len = 0;
+        while (recv_len < str_len)
+        {
+            recv_cnt = read(sock, &message[recv_len], BUF_SIZE - 1);
+            if (recv_cnt == -1)
+                error_handling("read() error");
+            recv_len += recv_cnt;
+        }
+        message[recv_len] = 0;
+        printf("Message from server: %s", message);
+    }
+    close(sock);
+    return 0;
+}
+
+void error_handling(char *message)
+{
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(1);
+}
+```
+# 第六章 基于udp的服务器/客户端
 
 
 
